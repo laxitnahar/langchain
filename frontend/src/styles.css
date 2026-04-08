@@ -191,6 +191,32 @@ button:disabled {
   margin-top: 18px;
 }
 
+.answers-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.answer-card {
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(244, 248, 255, 0.82);
+  border: 1px solid rgba(19, 34, 56, 0.08);
+}
+
+.answer-label {
+  display: block;
+  color: #617388;
+  font-size: 0.9rem;
+}
+
+.answer-card strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 1.4rem;
+}
+
 .panel-header {
   display: flex;
   justify-content: space-between;
@@ -243,6 +269,10 @@ tbody td {
 
   .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .answers-grid {
+    grid-template-columns: 1fr;
   }
 }
 

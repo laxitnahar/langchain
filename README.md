@@ -60,7 +60,7 @@ npm run dev
 
 - `GET /api/health`: simple health check
 - `GET /api/sync?shop_name=<shop>`: fetch Shopify data and upsert it into PostgreSQL
-- `GET /api/store-data?shop_name=<shop>`: read the stored data summary and previews from PostgreSQL
+- `GET /api/store-data?shop_name=<shop>`: read the stored data summary and analytics snapshot from PostgreSQL
 
 ## Required Shopify scopes
 

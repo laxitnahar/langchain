@@ -7,27 +7,54 @@ const EMPTY_RESULT = {
   database: {
     counts: {
       orders: 0,
+      order_line_items: 0,
       products: 0,
       customers: 0,
     },
     latest_synced_at: null,
-    previews: {
-      orders: [],
-      products: [],
-      customers: [],
+    insights: {
+      primary_currency: null,
+      orders_last_7_days: {
+        count: 0,
+        since_at: null,
+        as_of: null,
+      },
+      top_products_last_month: [],
+      promotion_recommendation: null,
     },
   },
 };
 
-function ResourceTable({ title, rows, columns }) {
+function formatDateTime(value) {
+  if (!value) {
+    return '-';
+  }
+
+  return new Date(value).toLocaleString();
+}
+
+function formatAmount(value, currency) {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  const numericValue = Number(value);
+  if (Number.isNaN(numericValue)) {
+    return String(value);
+  }
+
+  return currency ? `${numericValue.toFixed(2)} ${currency}` : numericValue.toFixed(2);
+}
+
+function ResourceTable({ title, rows, columns, emptyMessage = 'No rows available yet.' }) {
   return (
     <section className="panel">
       <div className="panel-header">
         <h3>{title}</h3>
-        <span>{rows.length} preview rows</span>
+        <span>{rows.length} rows</span>
       </div>
       {rows.length === 0 ? (
-        <p className="empty-state">No rows stored yet for this resource.</p>
+        <p className="empty-state">{emptyMessage}</p>
       ) : (
         <div className="table-wrap">
           <table>
@@ -39,10 +66,12 @@ function ResourceTable({ title, rows, columns }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <tr key={row.shopify_id}>
+              {rows.map((row, rowIndex) => (
+                <tr key={row.shopify_id ?? row.customer_key ?? row.product_shopify_id ?? `${title}-${rowIndex}`}>
                   {columns.map((column) => (
-                    <td key={column.key}>{row[column.key] ?? '-'}</td>
+                    <td key={column.key}>
+                      {column.render ? column.render(row[column.key], row) : row[column.key] ?? '-'}
+                    </td>
                   ))}
                 </tr>
               ))}
@@ -98,17 +127,20 @@ export default function App() {
 
   const database = result.database || EMPTY_RESULT.database;
   const counts = database.counts || EMPTY_RESULT.database.counts;
-  const previews = database.previews || EMPTY_RESULT.database.previews;
+  const insights = database.insights || EMPTY_RESULT.database.insights;
+  const recommendation = insights.promotion_recommendation;
+  const currency = insights.primary_currency;
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div className="hero-copy">
           <p className="eyebrow">Python + React + PostgreSQL</p>
-          <h1>Shopify REST data sync with GET requests only</h1>
+          <h1>Shopify sync with analytics-ready order storage</h1>
           <p className="hero-text">
-            Enter a Shopify store domain, pull Orders, Products, and Customers
-            through the backend, and store the payloads in PostgreSQL.
+            Sync orders, products, and customers from Shopify, keep the raw payloads,
+            and mirror the fields needed to answer common business questions directly
+            from PostgreSQL.
           </p>
         </div>
         <div className="panel form-panel">
@@ -152,6 +184,10 @@ export default function App() {
           <strong>{counts.orders}</strong>
         </article>
         <article className="stat-card">
+          <span>Order line items</span>
+          <strong>{counts.order_line_items}</strong>
+        </article>
+        <article className="stat-card">
           <span>Products</span>
           <strong>{counts.products}</strong>
         </article>
@@ -159,59 +195,57 @@ export default function App() {
           <span>Customers</span>
           <strong>{counts.customers}</strong>
         </article>
-        <article className="stat-card">
-          <span>Active shop</span>
-          <strong>{result.shop_name || 'Not loaded'}</strong>
-        </article>
       </section>
 
       <section className="panel status-panel">
         <div className="panel-header">
-          <h2>Database snapshot</h2>
+          <h2>Analytics snapshot</h2>
           <span>
             {database.latest_synced_at
-              ? new Date(database.latest_synced_at).toLocaleString()
+              ? `Last sync ${formatDateTime(database.latest_synced_at)}`
               : 'No sync recorded yet'}
           </span>
         </div>
         <p className="status-copy">
-          Shopify records are stored as raw JSON payloads in PostgreSQL, with a
-          few searchable columns mirrored for convenience.
+          Active shop: <strong>{result.shop_name || 'Not loaded'}</strong>
+          {currency ? ` | Primary currency: ${currency}` : ''}
         </p>
+        <div className="answers-grid">
+          <article className="answer-card">
+            <span className="answer-label">Orders in last 7 days</span>
+            <strong>{insights.orders_last_7_days.count}</strong>
+            <p className="helper-text">
+              Window: {formatDateTime(insights.orders_last_7_days.since_at)} to{' '}
+              {formatDateTime(insights.orders_last_7_days.as_of)}
+            </p>
+          </article>
+          <article className="answer-card">
+            <span className="answer-label">Suggested product to promote</span>
+            <strong>{recommendation?.product_title || 'Not enough sales data yet'}</strong>
+            <p className="helper-text">
+              {recommendation
+                ? `${recommendation.units_sold} units sold across ${recommendation.order_count} orders. ${recommendation.reason}`
+                : 'Sync recent order history to get a recommendation.'}
+            </p>
+          </article>
+        </div>
       </section>
 
       <section className="resource-grid">
         <ResourceTable
-          title="Orders"
-          rows={previews.orders}
+          title="Top products last month"
+          rows={insights.top_products_last_month}
+          emptyMessage="No product sales were found for last month."
           columns={[
-            { key: 'shopify_id', label: 'Shopify ID' },
-            { key: 'order_name', label: 'Order' },
-            { key: 'email', label: 'Email' },
-            { key: 'total_price', label: 'Total' },
-            { key: 'synced_at', label: 'Synced At' },
-          ]}
-        />
-        <ResourceTable
-          title="Products"
-          rows={previews.products}
-          columns={[
-            { key: 'shopify_id', label: 'Shopify ID' },
-            { key: 'title', label: 'Title' },
-            { key: 'handle', label: 'Handle' },
-            { key: 'product_status', label: 'Status' },
-            { key: 'synced_at', label: 'Synced At' },
-          ]}
-        />
-        <ResourceTable
-          title="Customers"
-          rows={previews.customers}
-          columns={[
-            { key: 'shopify_id', label: 'Shopify ID' },
-            { key: 'email', label: 'Email' },
-            { key: 'first_name', label: 'First Name' },
-            { key: 'last_name', label: 'Last Name' },
-            { key: 'synced_at', label: 'Synced At' },
+            { key: 'product_title', label: 'Product' },
+            { key: 'vendor', label: 'Vendor' },
+            { key: 'units_sold', label: 'Units Sold' },
+            { key: 'order_count', label: 'Orders' },
+            {
+              key: 'net_sales',
+              label: 'Net Sales',
+              render: (value, row) => formatAmount(value, row.currency),
+            },
           ]}
         />
       </section>
