@@ -23,6 +23,13 @@ const EMPTY_RESULT = {
       promotion_recommendation: null,
     },
   },
+  assistant: {
+    question: '',
+    generated_sql: '',
+    row_count: 0,
+    rows: [],
+    answer: '',
+  },
 };
 
 function formatDateTime(value) {
@@ -85,11 +92,12 @@ function ResourceTable({ title, rows, columns, emptyMessage = 'No rows available
 
 export default function App() {
   const [shopName, setShopName] = useState('');
+  const [question, setQuestion] = useState('');
   const [result, setResult] = useState(EMPTY_RESULT);
   const [loadingAction, setLoadingAction] = useState('');
   const [error, setError] = useState('');
 
-  async function callApi(path, actionLabel) {
+  async function callApi(path, actionLabel, extraParams = {}) {
     const trimmedShop = shopName.trim();
 
     if (!trimmedShop) {
@@ -103,6 +111,11 @@ export default function App() {
     try {
       const url = new URL(`${API_BASE_URL}${path}`);
       url.searchParams.set('shop_name', trimmedShop);
+      Object.entries(extraParams).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          url.searchParams.set(key, value);
+        }
+      });
 
       const response = await fetch(url.toString(), {
         method: 'GET',
@@ -128,8 +141,20 @@ export default function App() {
   const database = result.database || EMPTY_RESULT.database;
   const counts = database.counts || EMPTY_RESULT.database.counts;
   const insights = database.insights || EMPTY_RESULT.database.insights;
+  const assistant = result.assistant || EMPTY_RESULT.assistant;
   const recommendation = insights.promotion_recommendation;
   const currency = insights.primary_currency;
+  const previewRows = assistant.rows.slice(0, 10);
+
+  async function askQuestion() {
+    const trimmedQuestion = question.trim();
+    if (!trimmedQuestion) {
+      setError('Enter a question about the synced store data first.');
+      return;
+    }
+
+    await callApi('/api/ask', 'ask', { question: trimmedQuestion });
+  }
 
   return (
     <main className="app-shell">
@@ -228,6 +253,74 @@ export default function App() {
                 : 'Sync recent order history to get a recommendation.'}
             </p>
           </article>
+        </div>
+      </section>
+
+      <section className="panel ask-panel">
+        <div className="panel-header">
+          <h2>Ask the warehouse</h2>
+          <span>Groq + LangChain + PostgreSQL</span>
+        </div>
+        <p className="status-copy">
+          Ask business questions against the synced database for <strong>{result.shop_name || 'your selected shop'}</strong>.
+        </p>
+        <label className="question-label" htmlFor="analytics-question">
+          NATURAL_LANGUAGE_QUESTION
+        </label>
+        <textarea
+          id="analytics-question"
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          placeholder="Which product sold the most units last month?"
+          rows={4}
+        />
+        <div className="actions">
+          <button
+            type="button"
+            onClick={askQuestion}
+            disabled={Boolean(loadingAction)}
+          >
+            {loadingAction === 'ask' ? 'Thinking...' : 'Ask Groq'}
+          </button>
+        </div>
+        <p className="helper-text">
+          The question is answered from stored PostgreSQL data, not directly from the live Shopify API.
+        </p>
+        <div className="assistant-grid">
+          <article className="answer-card assistant-answer-card">
+            <span className="answer-label">Plain-English answer</span>
+            <strong>{assistant.answer || 'Ask a question after syncing store data.'}</strong>
+            {assistant.question ? (
+              <p className="helper-text">
+                Question: <code>{assistant.question}</code>
+              </p>
+            ) : null}
+          </article>
+          <article className="answer-card assistant-answer-card">
+            <span className="answer-label">Query summary</span>
+            <strong>{assistant.row_count} rows returned</strong>
+            <p className="helper-text">
+              The SQL below is the generated warehouse query used to answer the question.
+            </p>
+          </article>
+        </div>
+        <div className="assistant-detail-grid">
+          <section className="assistant-detail-card">
+            <div className="panel-header">
+              <h3>Generated SQL</h3>
+              <span>{assistant.generated_sql ? 'Latest query' : 'Waiting for a question'}</span>
+            </div>
+            <pre className="code-block">{assistant.generated_sql || 'SELECT ...'}</pre>
+          </section>
+          <section className="assistant-detail-card">
+            <div className="panel-header">
+              <h3>Result preview</h3>
+              <span>{previewRows.length} of {assistant.row_count} rows</span>
+            </div>
+            <pre className="code-block json-block">
+              {previewRows.length ? JSON.stringify(previewRows, null, 2) : '[]'}
+            </pre>
+          </section>
         </div>
       </section>
 

@@ -3,4 +3,4 @@ uvicorn[standard]>=0.32,<1
 httpx>=0.28,<1
 psycopg[binary]>=3.2,<4
 pydantic-settings>=2.6,<3
-
+langchain-groq>=0.3,<1

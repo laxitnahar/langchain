@@ -217,6 +217,13 @@ def initialize_database() -> None:
         connection.commit()
 
 
+def run_select_query(query: str) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        with connection.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(query)
+            return [dict(row) for row in cursor.fetchall()]
+
+
 def _to_decimal(value: Any) -> Decimal | None:
     if value in (None, ""):
         return None

@@ -19,7 +19,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -108,7 +109,8 @@ h1 {
   color: #5a6982;
 }
 
-.form-panel input {
+.form-panel input,
+textarea {
   width: 100%;
   border: 1px solid rgba(19, 34, 56, 0.18);
   border-radius: 16px;
@@ -116,9 +118,15 @@ h1 {
   background: rgba(255, 255, 255, 0.86);
 }
 
-.form-panel input:focus {
+.form-panel input:focus,
+textarea:focus {
   outline: 2px solid rgba(39, 122, 214, 0.34);
   border-color: rgba(39, 122, 214, 0.4);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 116px;
 }
 
 .actions {
@@ -191,6 +199,17 @@ button:disabled {
   margin-top: 18px;
 }
 
+.ask-panel {
+  margin-top: 18px;
+}
+
+.question-label {
+  font-size: 0.84rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #5a6982;
+}
+
 .answers-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -236,6 +255,48 @@ button:disabled {
   margin-top: 18px;
 }
 
+.assistant-grid,
+.assistant-detail-grid {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.assistant-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assistant-detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.assistant-answer-card strong {
+  font-size: 1.1rem;
+  line-height: 1.35;
+}
+
+.assistant-detail-card {
+  border-radius: 18px;
+  padding: 18px;
+  background: rgba(244, 248, 255, 0.82);
+  border: 1px solid rgba(19, 34, 56, 0.08);
+}
+
+.code-block {
+  margin: 0;
+  padding: 16px;
+  border-radius: 16px;
+  background: #142233;
+  color: #e8f0fb;
+  overflow: auto;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+
+.json-block {
+  max-height: 360px;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
@@ -272,6 +333,11 @@ tbody td {
   }
 
   .answers-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .assistant-grid,
+  .assistant-detail-grid {
     grid-template-columns: 1fr;
   }
 }

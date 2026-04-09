@@ -7,6 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     shopify_api_version: str = Field(..., alias="SHOPIFY_API_VERSION")
     shopify_access_token: str = Field(..., alias="SHOPIFY_ACCESS_TOKEN")
+    groq_api_key: str | None = Field(None, alias="GROQ_API_KEY")
+    groq_model: str = Field("llama-3.3-70b-versatile", alias="GROQ_MODEL")
+    groq_timeout_seconds: float = Field(60.0, alias="GROQ_TIMEOUT_SECONDS")
 
     pg_host: str = Field(..., alias="PG_HOST")
     pg_port: int = Field(..., alias="PG_PORT")

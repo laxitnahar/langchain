@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .assistant import answer_store_question
 from .database import (
     get_store_snapshot,
     upsert_customers,
@@ -49,3 +50,7 @@ def load_store_data(shop_name: str) -> dict[str, Any]:
         "shop_name": normalized_shop_name,
         "database": snapshot,
     }
+
+
+def ask_store_question(shop_name: str, question: str) -> dict[str, Any]:
+    return answer_store_question(shop_name, question)

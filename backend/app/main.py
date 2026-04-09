@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import initialize_database
-from .services import load_store_data, sync_shop_data
+from .services import ask_store_question, load_store_data, sync_shop_data
 
 
 @asynccontextmanager
@@ -65,6 +65,19 @@ def store_data(
 ) -> dict:
     try:
         return load_store_data(shop_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Unexpected server error: {exc}") from exc
+
+
+@app.get("/api/ask")
+def ask(
+    shop_name: str = Query(..., min_length=1, description="Shopify myshopify domain"),
+    question: str = Query(..., min_length=1, description="Natural-language analytics question"),
+) -> dict:
+    try:
+        return ask_store_question(shop_name, question)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
