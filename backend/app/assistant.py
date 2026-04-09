@@ -26,6 +26,11 @@ from .shopify import normalize_shop_name
 
 MAX_RESULT_ROWS = 200
 LIMIT_PATTERN = re.compile(r"\blimit\s+(\d+)\b", re.IGNORECASE)
+BLOCKED_QUESTION_PATTERN = re.compile(
+    r"^\s*(insert|update|delete|drop|alter|create|grant|revoke|truncate|remove)\b|"
+    r"\b(delete\s+from|drop\s+table|truncate\s+table|update\s+\w+|insert\s+into|alter\s+table|create\s+table)\b",
+    re.IGNORECASE,
+)
 BLOCKED_SQL_PATTERN = re.compile(
     r"\b(insert|update|delete|drop|alter|create|grant|revoke|truncate|copy|comment|vacuum|analyze)\b",
     re.IGNORECASE,
@@ -135,6 +140,7 @@ You must answer the user's question by reasoning step by step and using tools wh
 
 Rules:
 - For data questions, use `inspect_shop_schema` if you need schema details, then use `run_shop_sql`.
+- If the user asks to modify, delete, create, update, or remove data, refuse because this endpoint is read-only.
 - Base your final answer only on tool observations.
 - Use `analyze_rows_with_python` only after `run_shop_sql`, and only for calculations or reshaping on the current `rows`.
 - Never write or request non-SELECT SQL.
@@ -195,6 +201,10 @@ def answer_store_question(shop_name: str, question: str) -> dict[str, Any]:
 
     if not cleaned_question:
         raise ValueError("A question is required.")
+
+    blocked_reason = _validate_question_intent(cleaned_question)
+    if blocked_reason:
+        raise ValueError(blocked_reason)
 
     session = AgentSession(shop_name=normalized_shop_name)
     answer = _run_react_agent(session, cleaned_question)
@@ -335,7 +345,7 @@ def _safety_check_sql(sql: str, shop_name: str) -> str:
         raise RuntimeError("The generated SQL must contain only one statement.")
 
     if BLOCKED_SQL_PATTERN.search(cleaned):
-        raise RuntimeError("The generated SQL contained a blocked keyword.")
+        raise RuntimeError("This operation is not permitted.")
 
     if f"'{shop_name}'" not in cleaned.lower():
         raise RuntimeError("The generated SQL did not scope itself to the requested shop_name.")
@@ -360,6 +370,16 @@ def _validate_python_code(code: str) -> str | None:
         return (
             "Python analysis is limited to calculations on the current rows. "
             "Imports, file access, network access, subprocess calls, and dunder usage are blocked."
+        )
+
+    return None
+
+
+def _validate_question_intent(question: str) -> str | None:
+    if BLOCKED_QUESTION_PATTERN.search(question):
+        return (
+            "This endpoint is read-only. Ask an analytics question such as "
+            "'How many customers do we have?' instead of a data-modifying command."
         )
 
     return None
