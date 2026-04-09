@@ -282,6 +282,20 @@ button:disabled {
   border: 1px solid rgba(19, 34, 56, 0.08);
 }
 
+.assistant-table-wrap {
+  margin-top: 10px;
+}
+
+.assistant-table {
+  min-width: 720px;
+}
+
+.assistant-table td {
+  max-width: 280px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .code-block {
   margin: 0;
   padding: 16px;

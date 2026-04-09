@@ -53,6 +53,69 @@ function formatAmount(value, currency) {
   return currency ? `${numericValue.toFixed(2)} ${currency}` : numericValue.toFixed(2);
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function formatCellValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return '-';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'true' : 'false';
+  }
+
+  if (Array.isArray(value) || isPlainObject(value)) {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function AssistantResultsPreview({ rows, rowCount }) {
+  if (rows.length === 0) {
+    return <p className="empty-state">No rows were returned for this question.</p>;
+  }
+
+  const isTabular = rows.every(isPlainObject);
+  if (!isTabular) {
+    return <pre className="code-block json-block">{JSON.stringify(rows, null, 2)}</pre>;
+  }
+
+  const columns = Array.from(
+    new Set(rows.flatMap((row) => Object.keys(row))),
+  );
+
+  return (
+    <>
+      <p className="helper-text">
+        Showing {rows.length} of {rowCount} rows.
+      </p>
+      <div className="table-wrap assistant-table-wrap">
+        <table className="assistant-table">
+          <thead>
+            <tr>
+              {columns.map((column) => (
+                <th key={column}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr key={`assistant-row-${rowIndex}`}>
+                {columns.map((column) => (
+                  <td key={`${rowIndex}-${column}`}>{formatCellValue(row[column])}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function ResourceTable({ title, rows, columns, emptyMessage = 'No rows available yet.' }) {
   return (
     <section className="panel">
@@ -317,9 +380,7 @@ export default function App() {
               <h3>Result preview</h3>
               <span>{previewRows.length} of {assistant.row_count} rows</span>
             </div>
-            <pre className="code-block json-block">
-              {previewRows.length ? JSON.stringify(previewRows, null, 2) : '[]'}
-            </pre>
+            <AssistantResultsPreview rows={previewRows} rowCount={assistant.row_count} />
           </section>
         </div>
       </section>

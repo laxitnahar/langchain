@@ -6,8 +6,10 @@ import re
 from contextlib import contextmanager
 from datetime import date, datetime, time
 from decimal import Decimal
+from functools import lru_cache
 from typing import Any
 
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 
 from .config import get_settings
@@ -22,81 +24,134 @@ BLOCKED_SQL_PATTERN = re.compile(
 )
 
 SCHEMA_TEXT = """
-Table: orders
-Primary key: (shop_name, shopify_id)
-- shop_name TEXT NOT NULL: normalized Shopify myshopify domain used to partition all data per store.
-- shopify_id BIGINT NOT NULL: unique Shopify order id.
-- order_name TEXT: human-readable order label such as #1001.
-- order_number BIGINT: sequential order number from Shopify.
-- email TEXT: best available order email address.
-- customer_shopify_id BIGINT: Shopify customer id linked to the order.
-- customer_email TEXT: customer email copied onto the order fact row.
-- customer_first_name TEXT: customer first name from the order payload.
-- customer_last_name TEXT: customer last name from the order payload.
-- financial_status TEXT: payment status such as paid or pending.
-- fulfillment_status TEXT: fulfillment status reported by Shopify.
-- source_name TEXT: channel/source that created the order.
-- currency TEXT: order currency code such as USD.
-- tags TEXT: comma-separated Shopify tags on the order.
-- created_at TIMESTAMPTZ: order creation timestamp.
-- processed_at TIMESTAMPTZ: timestamp when Shopify marked the order processed.
-- updated_at TIMESTAMPTZ: last Shopify update timestamp for the order.
-- cancelled_at TIMESTAMPTZ: cancellation timestamp when the order was cancelled.
-- is_test BOOLEAN NOT NULL DEFAULT FALSE: whether the order is a Shopify test order.
-- subtotal_price_amount NUMERIC(18, 2): order subtotal before taxes and shipping.
-- total_discounts_amount NUMERIC(18, 2): total discounts applied to the order.
-- total_tax_amount NUMERIC(18, 2): total taxes charged on the order.
-- total_shipping_amount NUMERIC(18, 2): total shipping charges for the order.
-- total_price TEXT: raw total_price string from Shopify.
-- total_price_amount NUMERIC(18, 2): numeric total order amount.
-- current_total_price_amount NUMERIC(18, 2): current total after edits/refunds reflected by Shopify.
-- total_line_items_price_amount NUMERIC(18, 2): total price across line items before shipping/tax.
-- line_items_count INTEGER NOT NULL DEFAULT 0: number of distinct line items on the order.
-- items_quantity INTEGER NOT NULL DEFAULT 0: total quantity across all line items.
-- order_city TEXT: city from shipping address or billing fallback.
-- order_country TEXT: country from shipping address or billing fallback.
-- payload JSONB NOT NULL: raw Shopify order payload.
-- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(): when this warehouse row was last synced.
+orders(
+  shop_name TEXT,
+  shopify_id BIGINT,
+  order_name TEXT,
+  order_number BIGINT,
+  email TEXT,
+  customer_shopify_id BIGINT,
+  customer_email TEXT,
+  customer_first_name TEXT,
+  customer_last_name TEXT,
+  financial_status TEXT,
+  fulfillment_status TEXT,
+  source_name TEXT,
+  currency TEXT,
+  tags TEXT,
+  created_at TIMESTAMPTZ,
+  processed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ,
+  cancelled_at TIMESTAMPTZ,
+  is_test BOOLEAN,
+  subtotal_price_amount NUMERIC(18,2),
+  total_discounts_amount NUMERIC(18,2),
+  total_tax_amount NUMERIC(18,2),
+  total_shipping_amount NUMERIC(18,2),
+  total_price TEXT,
+  total_price_amount NUMERIC(18,2),
+  current_total_price_amount NUMERIC(18,2),
+  total_line_items_price_amount NUMERIC(18,2),
+  line_items_count INTEGER,
+  items_quantity INTEGER,
+  order_city TEXT,
+  order_country TEXT,
+  payload JSONB,
+  synced_at TIMESTAMPTZ
+)
+PK: (shop_name, shopify_id)
 
-Table: order_line_item_facts
-Primary key: (shop_name, order_shopify_id, line_item_shopify_id)
-Foreign key: (shop_name, order_shopify_id) -> orders (shop_name, shopify_id)
-- shop_name TEXT NOT NULL: normalized Shopify myshopify domain for the source store.
-- order_shopify_id BIGINT NOT NULL: parent Shopify order id.
-- line_item_shopify_id BIGINT NOT NULL: unique Shopify line item id.
-- product_shopify_id BIGINT: Shopify product id tied to the line item.
-- variant_shopify_id BIGINT: Shopify variant id tied to the line item.
-- sku TEXT: stock keeping unit for the sold variant.
-- product_title TEXT: product title captured on the order line.
-- variant_title TEXT: variant title captured on the order line.
-- display_name TEXT: full line item display name from Shopify.
-- vendor TEXT: product vendor/brand on the order line.
-- quantity INTEGER NOT NULL DEFAULT 0: quantity sold for this line item row.
-- price_amount NUMERIC(18, 2): per-unit line item price.
-- total_discount_amount NUMERIC(18, 2): total discount applied to the line item.
-- payload JSONB NOT NULL: raw Shopify line item payload.
-- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(): when this warehouse row was last synced.
+order_line_item_facts(
+  shop_name TEXT,
+  order_shopify_id BIGINT,
+  line_item_shopify_id BIGINT,
+  product_shopify_id BIGINT,
+  variant_shopify_id BIGINT,
+  sku TEXT,
+  product_title TEXT,
+  variant_title TEXT,
+  display_name TEXT,
+  vendor TEXT,
+  quantity INTEGER,
+  price_amount NUMERIC(18,2),
+  total_discount_amount NUMERIC(18,2),
+  payload JSONB,
+  synced_at TIMESTAMPTZ
+)
+PK: (shop_name, order_shopify_id, line_item_shopify_id)
+FK: (shop_name, order_shopify_id) -> orders(shop_name, shopify_id)
 
-Table: products
-Primary key: (shop_name, shopify_id)
-- shop_name TEXT NOT NULL: normalized Shopify myshopify domain for the source store.
-- shopify_id BIGINT NOT NULL: unique Shopify product id.
-- title TEXT: product title.
-- handle TEXT: Shopify product handle/slug.
-- product_status TEXT: current Shopify status such as active or draft.
-- payload JSONB NOT NULL: raw Shopify product payload.
-- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(): when this warehouse row was last synced.
+products(
+  shop_name TEXT,
+  shopify_id BIGINT,
+  title TEXT,
+  handle TEXT,
+  product_status TEXT,
+  payload JSONB,
+  synced_at TIMESTAMPTZ
+)
+PK: (shop_name, shopify_id)
 
-Table: customers
-Primary key: (shop_name, shopify_id)
-- shop_name TEXT NOT NULL: normalized Shopify myshopify domain for the source store.
-- shopify_id BIGINT NOT NULL: unique Shopify customer id.
-- email TEXT: customer email address.
-- first_name TEXT: customer first name.
-- last_name TEXT: customer last name.
-- payload JSONB NOT NULL: raw Shopify customer payload.
-- synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(): when this warehouse row was last synced.
+customers(
+  shop_name TEXT,
+  shopify_id BIGINT,
+  email TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  payload JSONB,
+  synced_at TIMESTAMPTZ
+)
+PK: (shop_name, shopify_id)
+
+Notes:
+- Every table must be filtered by shop_name.
+- For order date logic, prefer COALESCE(processed_at, created_at).
+- For business metrics, exclude test orders with COALESCE(is_test, FALSE) = FALSE unless the user asks otherwise.
+- Exclude cancelled orders with cancelled_at IS NULL unless the user asks otherwise.
+- Join order_line_item_facts to orders on shop_name + order_shopify_id = shopify_id.
+- Do not select payload unless the user explicitly asks for raw JSON.
+- Return only the columns needed to answer the question.
 """.strip()
+
+SQL_GENERATION_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            (
+                "You write exactly one PostgreSQL SELECT query for a Shopify analytics warehouse.\n"
+                "Rules:\n"
+                "- Output raw SQL only.\n"
+                "- Start with SELECT.\n"
+                "- Use PostgreSQL syntax only.\n"
+                "- Use only the schema below.\n"
+                "- Scope the query to shop_name = '{shop_name}'.\n"
+                f"- Always return LIMIT {MAX_RESULT_ROWS} or smaller.\n"
+                "- Prefer aggregation, grouping, sorting, and concise result sets over raw detailed dumps.\n"
+                "- Use readable aliases for aggregates.\n"
+                "- Never use INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, GRANT, REVOKE, COPY, COMMENT, VACUUM, or ANALYZE.\n"
+                "- Never return payload JSON unless the user explicitly requests raw payload data.\n\n"
+                "Schema:\n{schema_text}"
+            ),
+        ),
+        ("human", "{question}"),
+    ]
+)
+
+ANSWER_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            (
+                "You are a concise retail data analyst. "
+                "Answer in plain English using only the SQL results you receive. "
+                "If the result set is empty, say that no matching stored data was found. "
+                "Do not invent facts. "
+                "When useful, mention counts, totals, product names, currencies, or dates that appear in the rows."
+            ),
+        ),
+        ("human", "{payload}"),
+    ]
+)
 
 
 def answer_store_question(shop_name: str, question: str) -> dict[str, Any]:
@@ -128,26 +183,11 @@ def answer_store_question(shop_name: str, question: str) -> dict[str, Any]:
 
 def _generate_sql(shop_name: str, question: str) -> str:
     response = _invoke_groq(
-        [
-            (
-                "system",
-                (
-                    "You write PostgreSQL queries for a Shopify analytics warehouse. "
-                    "Return exactly one raw SQL query and nothing else.\n"
-                    "Rules:\n"
-                    f"- The query must start with SELECT.\n"
-                    f"- Use PostgreSQL syntax only.\n"
-                    f"- Only use the tables and columns in the provided schema.\n"
-                    f"- The query must be scoped to shop_name = '{shop_name}'.\n"
-                    f"- Every table in the schema includes a shop_name column.\n"
-                    f"- Never write INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, GRANT, REVOKE, COPY, COMMENT, VACUUM, or ANALYZE.\n"
-                    f"- Always end with LIMIT {MAX_RESULT_ROWS} or smaller.\n"
-                    f"- Do not use markdown fences, prose, or comments.\n\n"
-                    f"Schema:\n{SCHEMA_TEXT}"
-                ),
-            ),
-            ("human", question),
-        ]
+        SQL_GENERATION_PROMPT.format_messages(
+            shop_name=shop_name,
+            schema_text=_schema_text(),
+            question=question,
+        )
     )
     return response
 
@@ -163,24 +203,10 @@ def _generate_answer(question: str, sql: str, rows: list[dict[str, Any]]) -> str
         indent=2,
     )
 
-    return _invoke_groq(
-        [
-            (
-                "system",
-                (
-                    "You are a concise retail data analyst. "
-                    "Answer in plain English using only the SQL results you receive. "
-                    "If the result set is empty, say that no matching stored data was found. "
-                    "Do not invent values or mention hidden assumptions as facts. "
-                    "Mention key counts, totals, product names, or dates when the rows support them."
-                ),
-            ),
-            ("human", payload),
-        ]
-    )
+    return _invoke_groq(ANSWER_PROMPT.format_messages(payload=payload))
 
 
-def _invoke_groq(messages: list[tuple[str, str]]) -> str:
+def _invoke_groq(messages: list[Any]) -> str:
     settings = get_settings()
     if not settings.groq_api_key:
         raise RuntimeError("GROQ_API_KEY is not configured in backend/.env.")
@@ -196,6 +222,11 @@ def _invoke_groq(messages: list[tuple[str, str]]) -> str:
         response = llm.invoke(messages)
 
     return _content_to_text(response.content)
+
+
+@lru_cache(maxsize=1)
+def _schema_text() -> str:
+    return SCHEMA_TEXT
 
 
 def _safety_check_sql(sql: str, shop_name: str) -> str:
