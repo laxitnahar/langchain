@@ -29,6 +29,7 @@ const EMPTY_RESULT = {
     row_count: 0,
     rows: [],
     answer: '',
+    provider: '',
   },
 };
 
@@ -73,6 +74,145 @@ function formatCellValue(value) {
   return String(value);
 }
 
+function toNumberOrNull(value) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function formatChartValue(value) {
+  return new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function humanizeKey(value) {
+  return String(value)
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function choosePrimaryNumericColumn(columns) {
+  const preferredPatterns = [
+    /count/i,
+    /total/i,
+    /sales|revenue|amount/i,
+    /units|quantity/i,
+    /orders/i,
+  ];
+
+  for (const pattern of preferredPatterns) {
+    const match = columns.find((column) => pattern.test(column));
+    if (match) {
+      return match;
+    }
+  }
+
+  return columns[0];
+}
+
+function buildAssistantChart(rows) {
+  if (rows.length === 0 || !rows.every(isPlainObject)) {
+    return null;
+  }
+
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const numericColumns = columns.filter((column) => {
+    const presentValues = rows
+      .map((row) => row[column])
+      .filter((value) => value !== null && value !== undefined && value !== '');
+
+    return presentValues.length > 0 && presentValues.every((value) => toNumberOrNull(value) !== null);
+  });
+
+  if (numericColumns.length === 0) {
+    return null;
+  }
+
+  if (rows.length === 1) {
+    const points = numericColumns
+      .map((column) => ({
+        label: humanizeKey(column),
+        value: toNumberOrNull(rows[0][column]),
+      }))
+      .filter((point) => point.value !== null);
+
+    if (points.length === 0) {
+      return null;
+    }
+
+    return {
+      title: 'Metric chart',
+      subtitle: 'Numeric values returned by the query',
+      points,
+    };
+  }
+
+  const labelColumns = columns.filter((column) => !numericColumns.includes(column));
+  const labelColumn = labelColumns.find((column) =>
+    rows.some((row) => row[column] !== null && row[column] !== undefined && row[column] !== ''),
+  );
+
+  if (!labelColumn) {
+    return null;
+  }
+
+  const primaryNumericColumn = choosePrimaryNumericColumn(numericColumns);
+  const points = rows
+    .map((row, index) => ({
+      label: formatCellValue(row[labelColumn] ?? `Row ${index + 1}`),
+      value: toNumberOrNull(row[primaryNumericColumn]),
+    }))
+    .filter((point) => point.value !== null);
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  return {
+    title: `${humanizeKey(primaryNumericColumn)} by ${humanizeKey(labelColumn)}`,
+    subtitle: `Auto-charting ${humanizeKey(primaryNumericColumn)} from the returned rows`,
+    points,
+  };
+}
+
+function AssistantChart({ chart }) {
+  if (!chart) {
+    return null;
+  }
+
+  const maxValue = Math.max(...chart.points.map((point) => Math.abs(point.value)), 1);
+
+  return (
+    <section className="assistant-chart-card">
+      <div className="panel-header">
+        <h3>{chart.title}</h3>
+        <span>{chart.points.length} bars</span>
+      </div>
+      <p className="helper-text">{chart.subtitle}</p>
+      <div className="assistant-chart">
+        {chart.points.map((point) => (
+          <div className="assistant-chart-row" key={`${point.label}-${point.value}`}>
+            <div className="assistant-chart-meta">
+              <span className="assistant-chart-label">{point.label}</span>
+              <strong>{formatChartValue(point.value)}</strong>
+            </div>
+            <div className="assistant-chart-track">
+              <div
+                className="assistant-chart-fill"
+                style={{ width: `${Math.max((Math.abs(point.value) / maxValue) * 100, 6)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function AssistantResultsPreview({ rows, rowCount }) {
   if (rows.length === 0) {
     return <p className="empty-state">No rows were returned for this question.</p>;
@@ -86,12 +226,14 @@ function AssistantResultsPreview({ rows, rowCount }) {
   const columns = Array.from(
     new Set(rows.flatMap((row) => Object.keys(row))),
   );
+  const chart = buildAssistantChart(rows);
 
   return (
     <>
       <p className="helper-text">
         Showing {rows.length} of {rowCount} rows.
       </p>
+      <AssistantChart chart={chart} />
       <div className="table-wrap assistant-table-wrap">
         <table className="assistant-table">
           <thead>
@@ -363,7 +505,9 @@ export default function App() {
             <span className="answer-label">Query summary</span>
             <strong>{assistant.row_count} rows returned</strong>
             <p className="helper-text">
-              The SQL below is the generated warehouse query used to answer the question.
+              {assistant.provider
+                ? `Provider: ${assistant.provider}. The SQL below is the generated warehouse query used to answer the question.`
+                : 'The SQL below is the generated warehouse query used to answer the question.'}
             </p>
           </article>
         </div>

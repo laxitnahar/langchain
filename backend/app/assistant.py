@@ -177,12 +177,13 @@ def answer_store_question(shop_name: str, question: str) -> dict[str, Any]:
             "row_count": len(serializable_rows),
             "rows": serializable_rows,
             "answer": answer,
+            "provider": "groq",
         },
     }
 
 
 def _generate_sql(shop_name: str, question: str) -> str:
-    response = _invoke_groq(
+    response = _invoke_llm(
         SQL_GENERATION_PROMPT.format_messages(
             shop_name=shop_name,
             schema_text=_schema_text(),
@@ -203,25 +204,30 @@ def _generate_answer(question: str, sql: str, rows: list[dict[str, Any]]) -> str
         indent=2,
     )
 
-    return _invoke_groq(ANSWER_PROMPT.format_messages(payload=payload))
+    return _invoke_llm(ANSWER_PROMPT.format_messages(payload=payload))
 
 
-def _invoke_groq(messages: list[Any]) -> str:
+def _invoke_llm(messages: list[Any]) -> str:
+    with _no_proxy_environment():
+        llm = _get_groq_llm()
+        response = llm.invoke(messages)
+
+    return _content_to_text(response.content)
+
+
+@lru_cache(maxsize=1)
+def _get_groq_llm() -> ChatGroq:
     settings = get_settings()
     if not settings.groq_api_key:
         raise RuntimeError("GROQ_API_KEY is not configured in backend/.env.")
 
-    with _no_proxy_environment():
-        llm = ChatGroq(
-            api_key=settings.groq_api_key,
-            model=settings.groq_model,
-            temperature=0,
-            timeout=settings.groq_timeout_seconds,
-            max_retries=2,
-        )
-        response = llm.invoke(messages)
-
-    return _content_to_text(response.content)
+    return ChatGroq(
+        api_key=settings.groq_api_key,
+        model=settings.groq_model,
+        temperature=0,
+        timeout=settings.groq_timeout_seconds,
+        max_retries=2,
+    )
 
 
 @lru_cache(maxsize=1)

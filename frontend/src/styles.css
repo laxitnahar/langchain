@@ -282,6 +282,52 @@ button:disabled {
   border: 1px solid rgba(19, 34, 56, 0.08);
 }
 
+.assistant-chart-card {
+  margin-top: 14px;
+  border-radius: 18px;
+  padding: 18px;
+  background: linear-gradient(180deg, rgba(235, 244, 255, 0.92) 0%, rgba(248, 251, 255, 0.92) 100%);
+  border: 1px solid rgba(29, 111, 232, 0.14);
+}
+
+.assistant-chart {
+  display: grid;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.assistant-chart-row {
+  display: grid;
+  gap: 8px;
+}
+
+.assistant-chart-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.assistant-chart-label {
+  color: #22364b;
+  font-size: 0.94rem;
+  overflow-wrap: anywhere;
+}
+
+.assistant-chart-track {
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(29, 111, 232, 0.12);
+  overflow: hidden;
+}
+
+.assistant-chart-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #1d6fe8 0%, #33a2ff 100%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
 .assistant-table-wrap {
   margin-top: 10px;
 }
