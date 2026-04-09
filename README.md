@@ -53,8 +53,6 @@ npm run dev
 ## Environment files
 
 - `backend/.env`: contains the Shopify API version, access token, and PostgreSQL credentials you provided
-- `backend/.env.example`: same keys with safe placeholders
-- `frontend/.env.example`: backend base URL for local development
 
 ## API endpoints
 
