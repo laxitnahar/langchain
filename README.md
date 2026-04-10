@@ -1,6 +1,3 @@
-# Shopify REST ETL Demo
-
-This project fetches Shopify `Orders`, `Products`, and `Customers` with the official Shopify Admin REST API using `GET` requests only, then stores the raw payloads in PostgreSQL. The React UI collects the Shopify shop name at runtime and calls the backend through `GET` endpoints only.
 
 ## Stack
 
