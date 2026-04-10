@@ -12,9 +12,9 @@ from decimal import Decimal
 from functools import lru_cache
 from typing import Any
 
-from langchain.agents import AgentExecutor, create_react_agent
+from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain.tools import tool
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.tools import BaseTool
 from langchain_experimental.tools.python.tool import PythonAstREPLTool
 from langchain_groq import ChatGroq
@@ -25,6 +25,7 @@ from .database import get_store_snapshot, run_select_query
 from .shopify import normalize_shop_name
 
 MAX_RESULT_ROWS = 200
+SHOP_NAME_SQL_PLACEHOLDER = "'__SHOP_NAME__'"
 LIMIT_PATTERN = re.compile(r"\blimit\s+(\d+)\b", re.IGNORECASE)
 BLOCKED_QUESTION_PATTERN = re.compile(
     r"^\s*(insert|update|delete|drop|alter|create|grant|revoke|truncate|remove)\b|"
@@ -123,6 +124,7 @@ PK: (shop_name, shopify_id)
 
 Notes:
 - Every table must be filtered by shop_name.
+- In generated SQL, always use the exact placeholder '__SHOP_NAME__' for shop_name filters.
 - For order date logic, prefer COALESCE(processed_at, created_at).
 - For business metrics, exclude test orders with COALESCE(is_test, FALSE) = FALSE unless the user asks otherwise.
 - Exclude cancelled orders with cancelled_at IS NULL unless the user asks otherwise.
@@ -131,39 +133,25 @@ Notes:
 - Return only the columns needed to answer the question.
 """.strip()
 
-REACT_PROMPT = PromptTemplate.from_template(
-    """You are a retail data ReAct agent for a Shopify analytics warehouse.
-
-Current shop_name: {shop_name}
-
-You must answer the user's question by reasoning step by step and using tools when needed.
+AGENT_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a retail data agent for a Shopify analytics warehouse.
 
 Rules:
 - For data questions, use `inspect_shop_schema` if you need schema details, then use `run_shop_sql`.
 - If the user asks to modify, delete, create, update, or remove data, refuse because this endpoint is read-only.
+- In SQL, always filter by `shop_name = '__SHOP_NAME__'`. Do not use a real shop domain in the SQL text.
 - Base your final answer only on tool observations.
 - Use `analyze_rows_with_python` only after `run_shop_sql`, and only for calculations or reshaping on the current `rows`.
 - Never write or request non-SELECT SQL.
 - If a tool returns `SQL_ERROR` or `PYTHON_ERROR`, fix the issue and try again.
-- Keep the final answer concise, plain-English, and directly responsive.
-
-You have access to the following tools:
-
-{tools}
-
-Use this format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat as needed)
-Thought: I now know the final answer
-Final Answer: the final answer to the original input question
-
-Question: {input}
-Thought:{agent_scratchpad}"""
+- Keep the final answer concise, plain-English, and directly responsive.""",
+        ),
+        ("human", "{input}"),
+        MessagesPlaceholder("agent_scratchpad"),
+    ]
 )
 
 
@@ -208,11 +196,9 @@ def answer_store_question(shop_name: str, question: str) -> dict[str, Any]:
 
     session = AgentSession(shop_name=normalized_shop_name)
     answer = _run_react_agent(session, cleaned_question)
-    snapshot = get_store_snapshot(normalized_shop_name)
 
     return {
         "shop_name": normalized_shop_name,
-        "database": snapshot,
         "assistant": {
             "question": cleaned_question,
             "generated_sql": session.last_sql,
@@ -229,10 +215,10 @@ def _run_react_agent(session: AgentSession, question: str) -> str:
 
     with _no_proxy_environment():
         executor = AgentExecutor(
-            agent=create_react_agent(
+            agent=create_tool_calling_agent(
                 llm=_get_groq_llm(),
                 tools=tools,
-                prompt=REACT_PROMPT,
+                prompt=AGENT_PROMPT,
             ),
             tools=tools,
             verbose=False,
@@ -243,7 +229,6 @@ def _run_react_agent(session: AgentSession, question: str) -> str:
         result = executor.invoke(
             {
                 "input": question,
-                "shop_name": session.shop_name,
             }
         )
 
@@ -269,12 +254,8 @@ def _build_agent_tools(session: AgentSession) -> list[BaseTool]:
     def inspect_shop_schema(topic: str = "") -> str:
         """Return the warehouse schema and query rules for the current Shopify shop."""
         if topic:
-            return (
-                f"Current shop_name: {session.shop_name}\n"
-                f"Requested focus: {topic}\n\n"
-                f"{_schema_text()}"
-            )
-        return f"Current shop_name: {session.shop_name}\n\n{_schema_text()}"
+            return f"Requested focus: {topic}\n\n{_schema_text()}"
+        return _schema_text()
 
     @tool("run_shop_sql", args_schema=SqlToolInput)
     def run_shop_sql(query: str) -> str:
@@ -346,6 +327,14 @@ def _safety_check_sql(sql: str, shop_name: str) -> str:
 
     if BLOCKED_SQL_PATTERN.search(cleaned):
         raise RuntimeError("This operation is not permitted.")
+
+    if SHOP_NAME_SQL_PLACEHOLDER.lower() in cleaned.lower():
+        cleaned = re.sub(
+            re.escape(SHOP_NAME_SQL_PLACEHOLDER),
+            f"'{shop_name}'",
+            cleaned,
+            flags=re.IGNORECASE,
+        )
 
     if f"'{shop_name}'" not in cleaned.lower():
         raise RuntimeError("The generated SQL did not scope itself to the requested shop_name.")

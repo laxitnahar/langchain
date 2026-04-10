@@ -382,7 +382,7 @@ export default function App() {
       <section className="panel ask-panel">
         <div className="panel-header">
           <h2>Ask the warehouse</h2>
-          <span>Groq + LangChain + PostgreSQL</span>
+          <span></span>
         </div>
         <p className="status-copy">
           Ask business questions against the synced database for <strong>{result.shop_name || 'your selected shop'}</strong>.
@@ -403,7 +403,7 @@ export default function App() {
             onClick={askQuestion}
             disabled={Boolean(loadingAction)}
           >
-            {loadingAction === 'ask' ? 'Thinking...' : 'Ask Groq'}
+            {loadingAction === 'ask' ? 'Thinking...' : 'Ask'}
           </button>
         </div>
         <p className="helper-text">

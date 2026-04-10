@@ -22,9 +22,11 @@ The backend `.env` file has been prefilled with the credentials you supplied. Ro
 
 ```powershell
 cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+$env:NO_PROXY='*'
+$env:no_proxy='*'
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8004
 ```
 
 3. Start the API:
@@ -53,23 +55,3 @@ npm run dev
 ## Environment files
 
 - `backend/.env`: contains the Shopify API version, access token, and PostgreSQL credentials you provided
-
-## API endpoints
-
-- `GET /api/health`: simple health check
-- `GET /api/sync?shop_name=<shop>`: fetch Shopify data and upsert it into PostgreSQL
-- `GET /api/store-data?shop_name=<shop>`: read the stored data summary and analytics snapshot from PostgreSQL
-
-## Required Shopify scopes
-
-Your Shopify access token needs these scopes:
-
-- `read_orders`
-- `read_products`
-- `read_customers`
-
-## Notes
-
-- Shopify's REST Admin API is legacy, but this project intentionally uses it because that was the requested integration style.
-- The React app sends only the `shop_name` value. The Shopify access token stays in the backend.
-
